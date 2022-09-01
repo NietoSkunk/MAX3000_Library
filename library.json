@@ -1,0 +1,24 @@
+{
+    "name": "MAX3000_Lib",
+    "frameworks": "arduino",
+    "version": "0.1.0",
+    "keywords": "flipdot, display, driver",
+    "platforms": "*",
+    "description": "Driver Interface for MAX3000 drivers",
+    "repository":
+      {
+        "type": "git",
+        "url": "https://github.com/NietoSkunk/MAX3000_Lib.git"
+      },
+    "examples": [],
+      "export": {
+          "exclude": [
+              "docs/*",
+              "include/*",
+              "lib/*",
+              "test/*"
+          ]
+      },
+      "license": "BSD"
+  }
+  
