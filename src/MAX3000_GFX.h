@@ -32,7 +32,7 @@
 /**
  * @brief Wrapper around \ref MAX3000_Lib for use with Adafruit GFX Library
  */
-class MAX3000_GFX : public Adafruit_GFX, public MAX3000_Lib {
+class MAX3000_GFX : public Adafruit_GFX, public MAX3000_Base {
   public:
     /**
      * @brief Constructs a new MAX3000_GFX object.
@@ -114,6 +114,15 @@ class MAX3000_GFX : public Adafruit_GFX, public MAX3000_Lib {
      * @param color Line color, one of: MAX3000_LIGHT, MAX3000_DARK, or MAX3000_INVERSE.
      */
     virtual void drawFastVLine(int16_t x, int16_t y, int16_t h, uint16_t color);
+
+    /**
+     * @brief Set rotation setting for display
+     * @param r 0 thru 3 corresponding to 4 cardinal rotations
+     */
+    void setRotation(uint8_t r) {
+        rotation = r;
+        setDisplayRotation(rotation);
+    }
 
   protected:
     /**

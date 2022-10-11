@@ -36,23 +36,23 @@
 #define MAX3000_swap(a, b) (((a) ^= (b)), ((b) ^= (a)), ((a) ^= (b)))    ///< No-temp-var swap operation
 
 MAX3000_GFX::MAX3000_GFX(const MAX3000_Config & config_)
-    : Adafruit_GFX(config_.width, config_.height), MAX3000_Lib(config_) {
+    : Adafruit_GFX(config_.width, config_.height), MAX3000_Base(config_) {
 }
 
 MAX3000_GFX::~MAX3000_GFX(void) {
 }
 
 void MAX3000_GFX::drawPixel(int16_t x, int16_t y, uint16_t color) {
-    MAX3000_Lib::drawPixel(x, y, color);
+    MAX3000_Base::drawPixel(x, y, color);
 }
 
 void MAX3000_GFX::invertDisplay(bool i) {
-    MAX3000_Lib::invertDisplay(i);
+    MAX3000_Base::invertDisplay(i);
 }
 
 void MAX3000_GFX::drawFastHLine(int16_t x, int16_t y, int16_t w, uint16_t color) {
     bool bSwap = false;
-    switch(getDisplayRotation()) {
+    switch(getRotation()) {
         case 1:
             // 90 degree rotation, swap x & y for rotation, then invert x
             bSwap = true;

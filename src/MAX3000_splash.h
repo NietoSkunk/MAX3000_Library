@@ -5,7 +5,7 @@
  * Splashes will be stored in PROGMEM (flash).
  * If MAX3000_NO_SPLASH is defined, the splashes are omitted.
  */
-#define MAX3000_NO_SPLASH // Disable this splash screen, maintained for licensing.
+#define MAX3000_NO_SPLASH    // Disable this splash screen, maintained for licensing.
 #ifndef MAX3000_NO_SPLASH
 /* clang-format off */
 

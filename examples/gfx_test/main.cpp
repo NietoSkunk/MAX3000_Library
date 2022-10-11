@@ -2,7 +2,7 @@
  This example is for a single MAX3000 display.
  Modified from Adafruit_SDD1306 example.
 
- Original License Test:
+ Original License Text:
  Adafruit invests time and resources providing this open
  source code, please support Adafruit and open-source
  hardware by purchasing products from Adafruit!
@@ -14,7 +14,6 @@
  **************************************************************************/
 
 #include <Arduino.h>
-
 #include <MAX3000_Font6.h>
 #include <MAX3000_GFX.h>
 
@@ -36,6 +35,25 @@ static const unsigned char PROGMEM logo_bmp[] = {
     0b00000000, 0b00110000
 };
 
+#if defined(ARDUINO_ARCH_STM32)
+#define MAX_MOSI_PIN PA7     // Pin connected to MTX_DIN
+#define MAX_SCLK_PIN PA5     // Pin connected to MTX_CLK
+#define MAX_LAT_PIN PB10     // Pin connected to MTX_LAT
+#define MAX_RST_PIN PB4      // Pin connected to MTX_RST
+#define MAX_PULSE_PIN PB5    // Pin connected to PULSE_ENABLE
+#define MAX_COL_PIN PB3      // Pin connected to COL_ENABLE_N
+#define MAX_ROW_PIN PA10     // Pin connected to ROW_ENABLE_N
+#define MAX_PWM_PIN PC7      // Pin connected to LED_ILLUM
+#elif defined(ESP32)
+#define MAX_MOSI_PIN 23     // Pin connected to MTX_DIN
+#define MAX_SCLK_PIN 18     // Pin connected to MTX_CLK
+#define MAX_LAT_PIN 16      // Pin connected to MTX_LAT
+#define MAX_RST_PIN 17      // Pin connected to MTX_RST
+#define MAX_PULSE_PIN 25    // Pin connected to PULSE_ENABLE
+#define MAX_COL_PIN 26      // Pin connected to COL_ENABLE_N
+#define MAX_ROW_PIN 27      // Pin connected to ROW_ENABLE_N
+#define MAX_PWM_PIN 22      // Pin connected to LED_ILLUM
+#else
 #define MAX_MOSI_PIN 11    // Pin connected to MTX_DIN
 #define MAX_SCLK_PIN 13    // Pin connected to MTX_CLK
 #define MAX_LAT_PIN 6      // Pin connected to MTX_LAT
@@ -44,11 +62,12 @@ static const unsigned char PROGMEM logo_bmp[] = {
 #define MAX_COL_PIN 3      // Pin connected to COL_ENABLE_N
 #define MAX_ROW_PIN 2      // Pin connected to ROW_ENABLE_N
 #define MAX_PWM_PIN 9      // Pin connected to LED_ILLUM
+#endif
 
 MAX3000_GFX display(MAX3000_Config(DISPLAY_WIDTH, DISPLAY_HEIGHT, MAX_MOSI_PIN,
     MAX_SCLK_PIN, MAX_LAT_PIN, MAX_RST_PIN,
     MAX_PULSE_PIN, MAX_COL_PIN, MAX_ROW_PIN));
-  
+
 void testdrawline() {
     int16_t i;
 
@@ -117,7 +136,7 @@ void testdrawline() {
 void testdrawrect(void) {
     display.clearDisplay();
 
-    for(int16_t i = 0; i < display.height() / 2; i += 2) {
+    for(int16_t i = 0; i < min(display.width(), display.height()) / 2; i += 2) {
         display.drawRect(i, i, display.width() - 2 * i, display.height() - 2 * i,
             MAX3000_LIGHT);
         display.display();    // Update screen with each newly-drawn rectangle
@@ -171,7 +190,7 @@ void testfillcircle(void) {
 void testdrawroundrect(void) {
     display.clearDisplay();
 
-    for(int16_t i = 0; i < display.height() / 2 - 2; i += 2) {
+    for(int16_t i = 0; i < min(display.width(), display.height()) / 2 - 2; i += 2) {
         display.drawRoundRect(i, i, display.width() - 2 * i,
             display.height() - 2 * i, display.height() / 4,
             MAX3000_LIGHT);
@@ -346,10 +365,12 @@ void setup() {
     delay(2000);    // Pause for 2 seconds
     display.drawPixel(10, 10, MAX3000_LIGHT);
 
+    display.printDisplay();
     display.display();
     delay(2000);    // Pause for 2 seconds
 
     display.clearDisplay();
+    display.printDisplay();
     display.display();
 
     // Turn off User LED on driver
@@ -379,6 +400,10 @@ void setup() {
     testfilltriangle();    // Draw triangles (filled)
 
     testdrawchar();    // Draw characters of the default font
+
+    display.setRotation(1);
+    testdrawchar();    // Draw characters of the default font, rotated
+    display.setRotation(0);
 
     testdrawstyles();    // Draw 'stylized' characters
 

@@ -15,7 +15,6 @@
 #include <Arduino.h>
 #include <Adafruit_GFX.h>
 // Generated with https://tchapi.github.io/Adafruit-GFX-Font-Customiser/
-
 const uint8_t luminator_6Bitmaps[] PROGMEM = {
     0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x00, 0x80, 0x80, 0x80, 0x80, 0x80,
     0x80, 0x00, 0x80, 0xA0, 0xA0, 0xA0, 0x50, 0x50, 0xF8, 0x50, 0xF8, 0x50,
@@ -174,7 +173,7 @@ const GFXglyph luminator_6Glyphs[] PROGMEM = {
     { 842, 8, 7, 5, 0, -7 },    // 0x66 'f'
     { 849, 8, 6, 6, 0, -5 },    // 0x67 'g'
     { 855, 8, 7, 5, 0, -7 },    // 0x68 'h'
-    { 862, 8, 6, 4, 0, -6 },    // 0x69 'i'
+    { 862, 8, 6, 2, 0, -6 },    // 0x69 'i'
     { 868, 8, 7, 5, 0, -6 },    // 0x6A 'j'
     { 875, 8, 7, 5, 0, -7 },    // 0x6B 'k'
     { 882, 8, 7, 2, 0, -7 },    // 0x6C 'l'

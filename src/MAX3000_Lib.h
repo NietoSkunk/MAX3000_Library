@@ -29,8 +29,14 @@
 typedef class HardwareSPI SPIClass;
 #endif
 
+// Arduino / Raspberry Pi specific includes and macros
+#ifndef WIRINGPI
+#include <Arduino.h>
 #include <SPI.h>
 #include <Wire.h>
+#else
+#include <MAX3000_Pi.h>
+#endif
 
 #if defined(__AVR__)
 typedef volatile uint8_t PortReg;
@@ -46,13 +52,12 @@ typedef uint32_t PortMask;
 #define HAVE_PORTREG
 #endif
 
+// TODO: PortReg is not working
 #undef HAVE_PORTREG
 
 #define MAX3000_DARK 0       // Draw 'off' pixels
 #define MAX3000_LIGHT 1      // Draw 'on' pixels
 #define MAX3000_INVERSE 2    // Invert pixels
-
-#define MAX3000_SET_LED_PWM 0xC2    // I2C command to set the LED PWM
 
 #define MAX3000_ORDER_ROW_MAJOR 0           // Boards wired in rows
 #define MAX3000_ORDER_ROW_MAJOR_BOUNCE 1    // Boards wired in rows, moving backwards on every other row
@@ -78,7 +83,7 @@ class MAX3000_Config {
     MAX3000_Config(uint8_t width_ = 0, uint8_t height_ = 0)
         : width(((width_ + (PANEL_WIDTH - 1)) / PANEL_WIDTH) * PANEL_WIDTH),
           height(((height_ + (PANEL_HEIGHT - 1)) / PANEL_HEIGHT) * PANEL_HEIGHT),
-          boardOrder(0),
+          boardOrder(MAX3000_ORDER_ROW_MAJOR),
           mosi_pin(-1),
           sclk_pin(-1),
           lat_pin(-1),
@@ -168,22 +173,12 @@ class MAX3000_Config {
 /**
  * @brief Library for interacting with a MAX3000 Driver
  */
-class MAX3000_Lib {
+class MAX3000_Base {
   public:
-    /**
-     * @brief Constructs a new MAX3000_Lib object.
-     *
-     * Call the object's begin() function before use -- buffer
-     * allocation is performed there!
-     *
-     * @param config \ref MAX3000_Config object containing parameters for display
-     */
-    MAX3000_Lib(const MAX3000_Config & config);
-
     /**
      * @brief Virtual Destuctor
      */
-    virtual ~MAX3000_Lib(void);
+    virtual ~MAX3000_Base(void);
 
     /**
      * @brief Allocate RAM for image buffer, initialize peripherals and pins.
@@ -279,12 +274,6 @@ class MAX3000_Lib {
     virtual void invertDisplay(bool i);
 
     /**
-     * @brief Set rotation setting for display
-     * @param x 0 thru 3 corresponding to 4 cardinal rotations
-     */
-    virtual void setDisplayRotation(uint8_t r);
-
-    /**
      * @brief Set/clear/invert a single pixel.
      *
      * This is also invoked by the Adafruit_GFX library in generating
@@ -300,28 +289,51 @@ class MAX3000_Lib {
      */
     virtual void drawPixel(int16_t x, int16_t y, uint16_t color);
 
-    void setDissolveEnable(uint8_t param);
+    /**
+     * @brief Sets whether updates should be random or sequential
+     *
+     * If dissolve is enabled, the update order will be random and appear
+     * to be "Dissolving". Otherwise, it will update in order.
+     *
+     * @param param Whether dissolve should be enabled
+     */
+    void setDissolveEnable(bool param);
+
+    /**
+     * @brief Sets the duration of each flip pulse in microseconds
+     *
+     * The default value should work for most applications.
+     *
+     * @param duration Duration of a single pulse in microseconds
+     */
     void setPulseDurationUs(uint16_t duration);
 
     /**
-     * @brief Get width of the display, accounting for current rotation
-     * @returns Width in pixels
+     * @brief Sets whether each call to display() will take the same time
+     *
+     * Normally, display() will only take as long as necessary to update
+     * the pixels that have changed. However if this is true, it will
+     * delay as necessary so that each call takes the same time.
+     * This constant frame rate is roughly equal to:
+     *     28 * 16 * (pulseDuration + 10 + 290) = 246ms = 4.1fps
+     *
+     * @param param Whether constant frame rate should be used
      */
-    virtual int16_t getWidth(void) const { return _width; };
-
-    /**
-     * @brief Get height of the display, accounting for current rotation
-     * @returns Height in pixels
-     */
-    virtual int16_t getHeight(void) const { return _height; }
-
-    /**
-     * @brief Get rotation setting for display
-     * @returns 0 thru 3 corresponding to 4 cardinal rotations
-     */
-    virtual uint8_t getDisplayRotation(void) const { return _rotation; }
+    void setConstantFrameRate(bool param);
 
   protected:
+    /**
+     * @brief Constructs a new MAX3000_Base object.
+     *
+     * Protected so it can only be used by MAX3000_GFX or MAX3000_Display.
+     *
+     * Call the object's begin() function before use -- buffer
+     * allocation is performed there!
+     *
+     * @param config \ref MAX3000_Config object containing parameters for display
+     */
+    MAX3000_Base(const MAX3000_Config & config);
+
     /**
      * @brief Writes shift register buffer out to display drivers.
      *
@@ -353,6 +365,12 @@ class MAX3000_Lib {
      */
     void shuffleIndex();
 
+    /**
+     * @brief Set rotation setting for display
+     * @param x 0 thru 3 corresponding to 4 cardinal rotations
+     */
+    void setDisplayRotation(uint8_t r);
+
     /** @brief Configuration of display drivers */
     MAX3000_Config config;
 
@@ -363,13 +381,13 @@ class MAX3000_Lib {
     uint8_t * oldBuffer;
 
     /** @brief Display width as modified by current rotation */
-    int16_t _width;
+    int16_t localWidth;
 
     /** @brief Display height as modified by current rotation */
-    int16_t _height;
+    int16_t localHeight;
 
     /** @brief Display rotation (0 thru 3) */
-    uint8_t _rotation;
+    uint8_t localRotation;
 
     /** @brief Duration of each pulse in microseconds */
     uint16_t pulseDuration;
@@ -379,6 +397,9 @@ class MAX3000_Lib {
 
     /** @brief When enabled, bits will flip in a random order instead of sequentially */
     bool dissolveEnabled;
+
+    /** @brief Whether constant frame rate is enabled */
+    bool constantRate;
 
     /** @brief State flag that indicates when an update has not yet been done */
     bool firstUpdate;
@@ -398,6 +419,63 @@ class MAX3000_Lib {
   protected:
     SPISettings spiSettings;
 #endif
+};
+
+/**
+ * Generic dependency-free implementation of MAX3000 Display
+ *
+ * Workaround for non-virtual functions width(), height(), rotation()
+ * in Adafruit_GFX.
+ */
+class MAX3000_Display : public MAX3000_Base {
+  public:
+    /**
+     * @brief Constructs a new MAX3000_Display object.
+     *
+     * Call the object's begin() function before use -- buffer
+     * allocation is performed there!
+     *
+     * @param config \ref MAX3000_Config object containing parameters for display
+     */
+    MAX3000_Display(const MAX3000_Config & config)
+        : MAX3000_Base(config) {
+    }
+
+    /**
+     * @brief Virtual Destuctor
+     */
+    virtual ~MAX3000_Display(void) {}
+
+    /**
+     * @brief Get width of the display, accounting for current rotation
+     * @returns Width in pixels
+     */
+    int16_t
+    width(void) const { return localWidth; };
+
+    /**
+     * @brief Get height of the display, accounting for current rotation
+     * @returns Height in pixels
+     */
+    int16_t height(void) const { return localHeight; }
+
+    /**
+     * @brief Get rotation setting for display
+     * @returns 0 thru 3 corresponding to 4 cardinal rotations
+     */
+    uint8_t getRotation(void) const { return rotation; }
+
+    /**
+     * @brief Set rotation setting for display
+     * @param r 0 thru 3 corresponding to 4 cardinal rotations
+     */
+    void setRotation(uint8_t r) {
+        rotation = r;
+        setDisplayRotation(rotation);
+    }
+
+  protected:
+    uint8_t rotation;    ///< Display rotation (0 thru 3)
 };
 
 #endif    // _MAX3000_Lib_H_

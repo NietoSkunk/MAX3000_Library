@@ -22,7 +22,6 @@
  * must be included in any redistribution.
  */
 
-#include <Arduino.h>
 #include <MAX3000_Lib.h>
 
 #ifdef __AVR__
@@ -38,8 +37,10 @@
 #endif
 
 // Extra delay when bitbanging on ESP32, which updates much faster than AVR
-#if defined(ESP32)
+#if defined(ESP32) || defined(ESP8266) || defined(ARDUINO_ARCH_STM32)
 #define BITBANG_DELAY delayMicroseconds(5);
+#elif defined(WIRINGPI)
+#define BITBANG_DELAY delayMicroseconds(8);
 #else
 #define BITBANG_DELAY
 #endif
@@ -95,12 +96,13 @@
 #define SR_PIN_COL_BANK1 11
 #define SR_PIN_USER_LED 13
 
-MAX3000_Lib::MAX3000_Lib(const MAX3000_Config & config_)
+MAX3000_Base::MAX3000_Base(const MAX3000_Config & config_)
     : config(config_), buffer(NULL) {
-    _width          = config.width;
-    _height         = config.height;
+    localWidth          = config.width;
+    localHeight         = config.height;
     invertEnabled   = false;
     dissolveEnabled = false;
+    constantRate    = false;
     firstUpdate     = true;
 
     // 250uS has been determined to be a decent compromise between frame rate and flip reliability
@@ -111,7 +113,7 @@ MAX3000_Lib::MAX3000_Lib(const MAX3000_Config & config_)
 #endif
 }
 
-MAX3000_Lib::~MAX3000_Lib(void) {
+MAX3000_Base::~MAX3000_Base(void) {
     if(buffer) {
         free(buffer);
         buffer = NULL;
@@ -131,7 +133,7 @@ MAX3000_Lib::~MAX3000_Lib(void) {
 }
 
 inline void
-MAX3000_Lib::shiftRegWrite() {
+MAX3000_Base::shiftRegWrite() {
     // Push each board through the chain, starting with the last board
     SPI_TRANSACTION_START
     for(size_t board = config.numHBoards * config.numVBoards; board > 0; --board) {
@@ -167,7 +169,7 @@ MAX3000_Lib::shiftRegWrite() {
     MAX3000_UNLATCH
 }
 
-bool MAX3000_Lib::begin(bool reset, bool periphBegin) {
+bool MAX3000_Base::begin(bool reset, bool periphBegin) {
     // Create pixel buffers
     if((!buffer) && !(buffer = (uint8_t *)malloc(BUFFER_SIZE))) {
         return false;
@@ -248,10 +250,10 @@ bool MAX3000_Lib::begin(bool reset, bool periphBegin) {
     return true;
 }
 
-void MAX3000_Lib::drawPixel(int16_t x, int16_t y, uint16_t color) {
-    if((x >= 0) && (x < getWidth()) && (y >= 0) && (y < getHeight())) {
+void MAX3000_Base::drawPixel(int16_t x, int16_t y, uint16_t color) {
+    if((x >= 0) && (x < localWidth) && (y >= 0) && (y < localHeight)) {
         // Pixel is in-bounds. Rotate coordinates if needed.
-        switch(getDisplayRotation()) {
+        switch(localRotation) {
             case 1:
                 MAX3000_swap(x, y);
                 x = config.width - x - 1;
@@ -280,14 +282,14 @@ void MAX3000_Lib::drawPixel(int16_t x, int16_t y, uint16_t color) {
     }
 }
 
-void MAX3000_Lib::clearDisplay(void) {
+void MAX3000_Base::clearDisplay(void) {
     memset(buffer, 0, BUFFER_SIZE);
 }
 
-bool MAX3000_Lib::getPixel(int16_t x, int16_t y) {
-    if((x >= 0) && (x < getWidth()) && (y >= 0) && (y < getHeight())) {
+bool MAX3000_Base::getPixel(int16_t x, int16_t y) {
+    if((x >= 0) && (x < localWidth) && (y >= 0) && (y < localHeight)) {
         // Pixel is in-bounds. Rotate coordinates if needed.
-        switch(getDisplayRotation()) {
+        switch(localRotation) {
             case 1:
                 MAX3000_swap(x, y);
                 x = config.width - x - 1;
@@ -306,21 +308,23 @@ bool MAX3000_Lib::getPixel(int16_t x, int16_t y) {
     return false;    // Pixel out of bounds
 }
 
-void MAX3000_Lib::setUserLED(size_t board, bool state) {
+void MAX3000_Base::setUserLED(size_t board, bool state) {
     LOAD_SR(board, SR_PIN_USER_LED, state);
     shiftRegWrite();
 }
 
-uint8_t * MAX3000_Lib::getBuffer(void) {
+uint8_t * MAX3000_Base::getBuffer(void) {
     return buffer;
 }
 
-void MAX3000_Lib::display(bool force) {
+void MAX3000_Base::display(bool force) {
     if(dissolveEnabled) {
         // When dissolve mode is enabled, we want to update in a random order.
         // To maintain the random appearance, we'll shuffle on each update.
         shuffleIndex();
     }
+
+    int numChanged = 0;
 
     for(int i = 0; i < PANEL_HEIGHT * PANEL_WIDTH; ++i) {
 #if defined(ESP8266)
@@ -364,6 +368,7 @@ void MAX3000_Lib::display(bool force) {
             bool setPixel        = (newPixVal != invertEnabled);
             pixelsToSet[board]   = setPixel;
             pixelsToClear[board] = !setPixel;
+            numChanged++;
         }
 
         // Second Pass: Turn on pixels that need to be set
@@ -401,12 +406,20 @@ void MAX3000_Lib::display(bool force) {
     memcpy(oldBuffer, buffer, BUFFER_SIZE);
     firstUpdate = false;
 
+    if(constantRate) {
+        for(int i = numChanged; i < PANEL_HEIGHT * PANEL_WIDTH; ++i) {
 #if defined(ESP8266)
-    yield();
+            yield();
 #endif
+            shiftRegWrite();
+            delayMicroseconds(5);
+            delayMicroseconds(pulseDuration);
+            delayMicroseconds(5);
+        }
+    }
 }
 
-void MAX3000_Lib::printDisplay(Stream & stream) {
+void MAX3000_Base::printDisplay(Stream & stream) {
     // Print each row
     for(size_t index = 0; index < config.width * config.height; ++index) {
         size_t col = index % config.width;
@@ -471,38 +484,42 @@ void MAX3000_Lib::printDisplay(Stream & stream) {
     stream.println();
 }
 
-void MAX3000_Lib::invertDisplay(bool i) {
+void MAX3000_Base::invertDisplay(bool i) {
     invertEnabled = i;
 
     // Send an immediate update. We didn't change the actual buffer so we have to force an update.
     display(true);
 }
 
-void MAX3000_Lib::setDisplayRotation(uint8_t x) {
-    _rotation = (x & 3);
-    switch(_rotation) {
+void MAX3000_Base::setDisplayRotation(uint8_t x) {
+    localRotation = (x & 3);
+    switch(localRotation) {
         case 0:
         case 2:
-            _width  = config.width;
-            _height = config.height;
+            localWidth  = config.width;
+            localHeight = config.height;
             break;
         case 1:
         case 3:
-            _width  = config.height;
-            _height = config.width;
+            localWidth  = config.height;
+            localHeight = config.width;
             break;
     }
 }
 
-void MAX3000_Lib::setDissolveEnable(uint8_t param) {
-    dissolveEnabled = (bool)param;
+void MAX3000_Base::setDissolveEnable(bool param) {
+    dissolveEnabled = param;
 }
 
-void MAX3000_Lib::setPulseDurationUs(uint16_t param) {
+void MAX3000_Base::setPulseDurationUs(uint16_t param) {
     pulseDuration = param;
 }
 
-void MAX3000_Lib::selectRowColumn(size_t board, size_t row, size_t column) {    // TODO Board Order
+void MAX3000_Base::setConstantFrameRate(bool param) {
+    constantRate = param;
+}
+
+void MAX3000_Base::selectRowColumn(size_t board, size_t row, size_t column) {    // TODO Board Order
     // Map sequential rows and columns to the hardware pins
     const uint8_t colToCode[] = { 1, 0, 3, 2, 5, 4, 7, 6, 9, 8, 11, 10, 13, 12,
         15, 14, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27 };
@@ -528,7 +545,7 @@ void MAX3000_Lib::selectRowColumn(size_t board, size_t row, size_t column) {    
     LOAD_SR(board, SR_PIN_COL_BANK0, colBank & 0x1);
 }
 
-void MAX3000_Lib::setPixel() {
+void MAX3000_Base::setPixel() {
     // Global Pulse Enable
     MAX3000_PULSE
 
@@ -549,7 +566,7 @@ void MAX3000_Lib::setPixel() {
     MAX3000_UNPULSE
 }
 
-void MAX3000_Lib::clearPixel() {
+void MAX3000_Base::clearPixel() {
     // Global Pulse Enable
     MAX3000_PULSE
 
@@ -570,9 +587,13 @@ void MAX3000_Lib::clearPixel() {
     MAX3000_UNPULSE
 }
 
-void MAX3000_Lib::shuffleIndex() {
+void MAX3000_Base::shuffleIndex() {
     for(int i = 0; i < (int)(PANEL_HEIGHT * PANEL_WIDTH); i++) {
+#ifdef WIRINGPI
+        int n            = rand() % (PANEL_HEIGHT * PANEL_WIDTH);
+#else
         int n            = random(0, PANEL_HEIGHT * PANEL_WIDTH);
+#endif
         int temp         = shuffledIndex[n];
         shuffledIndex[n] = shuffledIndex[i];
         shuffledIndex[i] = temp;
