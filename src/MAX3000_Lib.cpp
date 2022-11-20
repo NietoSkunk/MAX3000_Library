@@ -136,13 +136,13 @@ inline void
 MAX3000_Base::shiftRegWrite() {
     // Push each board through the chain, starting with the last board
     SPI_TRANSACTION_START
-    for(size_t board = config.numHBoards * config.numVBoards; board > 0; --board) {
+    for(size_t board = 0; board < config.numHBoards * config.numVBoards; ++board) {
         if(config.spi) {
-            (void)config.spi->transfer16(shiftReg[board - 1]);
+            (void)config.spi->transfer16(shiftReg[board]);
         } else {
             for(uint16_t bit = 0x8000; bit; bit >>= 1) {
 #ifdef HAVE_PORTREG
-                if(shiftReg[board - 1] & bit)
+                if(shiftReg[board] & bit)
                     *mosiPort |= mosiPinMask;
                 else
                     *mosiPort &= ~mosiPinMask;
@@ -152,7 +152,7 @@ MAX3000_Base::shiftRegWrite() {
                 *clkPort &= ~clkPinMask;
                 BITBANG_DELAY
 #else
-                digitalWrite(config.mosi_pin, (bool)(shiftReg[board - 1] & bit));
+                digitalWrite(config.mosi_pin, (bool)(shiftReg[board] & bit));
                 BITBANG_DELAY
                 digitalWrite(config.sclk_pin, HIGH);
                 BITBANG_DELAY
